@@ -2,6 +2,7 @@
 if __name__ == "__main__":
     import os
     import torch
+    import yaml 
     import torch.nn as nn
     from torch.utils.data import DataLoader
     from torchvision import transforms
@@ -12,19 +13,38 @@ if __name__ == "__main__":
 
     mp.freeze_support()  # Windows safe
 
-    # ------ SETTINGS ------
+    # -------- CONFIG LOADING --------
+    CONFIG_PATH = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "configs",
+        "config.yaml"
+        )
+
+    with open(CONFIG_PATH, "r") as f:
+        cfg = yaml.safe_load(f)
+
+    # Training params
+    EPOCHS = cfg["training"]["epochs"]
+    BATCH_SIZE = cfg["training"]["batch_size"]
+    LR = cfg["training"]["learning_rate"]
+    IMG_SIZE = cfg["training"]["img_size"]
+    NUM_WORKERS = cfg["training"]["num_workers"]
+
+    # Model params
+    FREEZE_BACKBONE = cfg["model"]["freeze_backbone"]
+
+    # Paths
     BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    DATA_DIR = os.path.join(BASE_DIR, "data", "dataset", "UTKFace")
-   # update path if needed
-    MODEL_PATH = "age_gender_model.pth"
-    EPOCHS = 5
-    BATCH_SIZE = 16
-    LR = 1e-4
-    DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-    IMG_SIZE = 128
-    FREEZE_BACKBONE = True   # set False to fine-tune whole network
-    NUM_WORKERS = 0          # 0 avoids Windows spawn issues
-    # ----------------------
+    DATA_DIR = os.path.join(BASE_DIR, cfg["paths"]["dataset_dir"])
+    MODEL_PATH = cfg["paths"]["model_output"]
+
+    # Device
+    DEVICE = "cuda" if (
+        cfg["device"]["use_cuda"] and torch.cuda.is_available()
+    ) else "cpu"
+
+    print(f"Using device: {DEVICE}")
+
 
     transform = transforms.Compose([
         transforms.Resize((IMG_SIZE, IMG_SIZE)),
