@@ -1,21 +1,23 @@
 # train.py
 if __name__ == "__main__":
+    import os
     import torch
     import torch.nn as nn
     from torch.utils.data import DataLoader
     from torchvision import transforms
-    from dataset_loader import UTKFaceDataset
-    from model import MultiTaskResNet
+    from src.dataset_loader import UTKFaceDataset
+    from src.model import MultiTaskResNet
     from tqdm import tqdm
     import torch.multiprocessing as mp
 
     mp.freeze_support()  # Windows safe
 
     # ------ SETTINGS ------
-    DATA_DIR = "C:\\Users\\Nipun\\Desktop\\resusme project\\dataset\\UTKFace"
+    BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    DATA_DIR = os.path.join(BASE_DIR, "data", "dataset", "UTKFace")
    # update path if needed
     MODEL_PATH = "age_gender_model.pth"
-    EPOCHS = 12
+    EPOCHS = 5
     BATCH_SIZE = 16
     LR = 1e-4
     DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
