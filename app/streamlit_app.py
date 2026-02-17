@@ -1,39 +1,80 @@
+import sys
+import os
+
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if ROOT_DIR not in sys.path:
+    sys.path.append(ROOT_DIR)
+
+
 import streamlit as st
+import torch
 import cv2
 import numpy as np
-from inference import load_model, predict
+from PIL import Image
+from torchvision import transforms
+from src.model import MultiTaskResNet
 
-st.set_page_config(page_title="Age & Gender Predictor", layout="centered")
-st.title("🧠 Age & Gender Prediction")
+# ---------------- CONFIG ----------------
+MODEL_PATH = "age_gender_model.pth"
+IMG_SIZE = 128
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
-# Sidebar
-model_path = st.sidebar.text_input("Model Path", value="age_gender_model.pth")
-model = load_model(model_path)
+# ----------------------------------------
 
-# Image source
-option = st.radio("Select Image Source:", ("Upload Image", "Camera"))
-image = None
+@st.cache_resource
+def load_model():
+    model = MultiTaskResNet(pretrained=False)
+    model.load_state_dict(torch.load(MODEL_PATH, map_location=DEVICE))
+    model.to(DEVICE)
+    model.eval()
+    return model
 
-if option == "Upload Image":
-    uploaded = st.file_uploader("Upload a face image", type=["jpg", "jpeg", "png"])
-    if uploaded:
-        file_bytes = np.frombuffer(uploaded.read(), np.uint8)
-        image = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
-else:
-    camera_input = st.camera_input("Take a photo")
-    if camera_input:
-        bytes_data = camera_input.read()
-        file_bytes = np.frombuffer(bytes_data, np.uint8)
-        image = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+model = load_model()
 
-# Prediction
-if image is not None:
-    st.image(cv2.cvtColor(image, cv2.COLOR_BGR2RGB), caption="Input Image", use_column_width=True)
-    with st.spinner("Predicting..."):
-        age, gender, prob, face = predict(model, image)
+face_cascade = cv2.CascadeClassifier(
+    cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+)
 
-    st.success(f"Predicted Age: {age:.1f} years")
-    st.info(f"Gender: {gender} ({prob:.2f} confidence)")
-    st.image(cv2.cvtColor(face, cv2.COLOR_BGR2RGB), caption="Detected Face")
-else:
-    st.warning("Please upload or capture an image.")
+transform = transforms.Compose([
+    transforms.Resize((IMG_SIZE, IMG_SIZE)),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=(0.485, 0.456, 0.406),
+                         std=(0.229, 0.224, 0.225))
+])
+
+st.title("👁️ Age-Gaze")
+st.write("AI-based Age & Gender Estimation from Faces")
+
+uploaded_file = st.file_uploader("Upload an image", type=["jpg", "png", "jpeg"])
+
+if uploaded_file:
+    image = Image.open(uploaded_file).convert("RGB")
+    img_np = np.array(image)
+    gray = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
+
+    faces = face_cascade.detectMultiScale(
+        gray, scaleFactor=1.2, minNeighbors=5
+    )
+
+    if len(faces) == 0:
+        st.warning("No faces detected.")
+    else:
+        for (x, y, w, h) in faces:
+            face = image.crop((x, y, x + w, y + h))
+            face_tensor = transform(face).unsqueeze(0).to(DEVICE)
+
+            with torch.no_grad():
+                age_pred, gender_pred = model(face_tensor)
+                age = int(age_pred.item())
+                gender_prob = torch.sigmoid(gender_pred).item()
+
+            gender = "Male" if gender_prob > 0.5 else "Female"
+            confidence = gender_prob if gender == "Male" else 1 - gender_prob
+
+            label = f"{gender} ({confidence:.2f}), Age: {age-2}–{age+2}"
+
+            cv2.rectangle(img_np, (x, y), (x+w, y+h), (0, 255, 0), 2)
+            cv2.putText(img_np, label, (x, y-10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0,255,0), 2)
+
+        st.image(img_np, caption="Prediction Result", use_container_width=True)
